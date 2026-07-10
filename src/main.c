@@ -131,10 +131,12 @@ static void check_start_application(void) {
         return; // stay in bootloader
     }
     else {
+#if USE_DBL_TAP
         if (*DBL_TAP_PTR != DBL_TAP_MAGIC_QUICK_BOOT) {
             *DBL_TAP_PTR = DBL_TAP_MAGIC;
             delay(500);
         }
+#endif
         *DBL_TAP_PTR = 0;
     }
 
@@ -357,7 +359,12 @@ int main(void) {
 #endif
 #else // no monitor
         if (main_b_cdc_enable) {
+#if USE_MSC
             process_msc();
+#elif USE_HID || USE_WEBUSB
+            // no MSC: pump HF2 directly so all of msc.c can be GC'd
+            process_hid();
+#endif
         }
 #endif
 

@@ -49,9 +49,17 @@ const char devDescriptor[] = {
     0x00,
 #endif
     0x02,           //
-    0xEF,           // bDeviceClass:    Misc
+#if USE_CDC
+    0xEF,           // bDeviceClass:    Misc (IAD composite)
     0x02,           // bDeviceSubclass:
     0x01,           // bDeviceProtocol:
+#else
+    // No CDC means no IAD descriptor, so don't claim the Misc/IAD device
+    // class — let the class come from each interface descriptor instead.
+    0x00,           // bDeviceClass:    per-interface
+    0x00,           // bDeviceSubclass:
+    0x00,           // bDeviceProtocol:
+#endif
     0x40,           // bMaxPacketSize0
     USB_VID & 0xff, // vendor ID
     USB_VID >> 8,   //

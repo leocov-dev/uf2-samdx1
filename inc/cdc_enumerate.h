@@ -32,6 +32,10 @@
 
 #define PKT_SIZE 64
 
+// This header is included (via uf2.h) before uf2.h's flag defaults, so only
+// board_config.h has had a chance to define USE_CDC here; treat "undefined"
+// as the upstream default of 1.
+#if !defined(USE_CDC) || USE_CDC
 #define USB_EP_IN 1
 #define USB_EP_OUT 2
 #define USB_EP_COMM 3
@@ -43,6 +47,24 @@
 #define USB_EP_WEB 7
 
 #define MAX_EP 8
+#else
+// Without CDC, pack the endpoint numbers so the per-endpoint caches
+// (endpointCache / usb_endpoint_table, sized by MAX_EP) stay small —
+// this matters on 4 KB-RAM parts like the SAMD21E15.
+// The CDC endpoint macros keep (dead, GC'd) definitions so the unused
+// cdc_* transport functions still compile.
+#define USB_EP_IN 1
+#define USB_EP_OUT 2
+#define USB_EP_COMM 3
+
+#define USB_EP_MSC_IN 1
+#define USB_EP_MSC_OUT 2
+
+#define USB_EP_HID 3
+#define USB_EP_WEB 4
+
+#define MAX_EP 5
+#endif
 
 #define NVM_USB_PAD_TRANSN_POS 45
 #define NVM_USB_PAD_TRANSN_SIZE 5

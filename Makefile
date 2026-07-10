@@ -37,7 +37,7 @@ $(WFLAGS)
 UF2_VERSION_BASE = $(shell git describe --dirty=+ --always --tags)
 
 ifeq ($(CHIP_FAMILY), samd21)
-LINKER_SCRIPT=scripts/samd21j18a.ld
+LINKER_SCRIPT?=scripts/samd21j18a.ld
 BOOTLOADER_SIZE=8192
 SELF_LINKER_SCRIPT=scripts/samd21j18a_self.ld
 # Code squeezing.
@@ -110,6 +110,10 @@ SUBMODULES = lib/uf2/README.md
 
 all: submodules dirs $(EXECUTABLE) $(SELF_EXECUTABLE)
 submodules: $(SUBMODULES)
+
+# Bootloader binary only — skips the self-update UF2 (and thus the lib/uf2
+# submodule + python tooling), which lc-jiggler doesn't use (no MSC).
+bin: dirs $(EXECUTABLE)
 
 r: run
 b: burn

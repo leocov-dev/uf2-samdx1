@@ -44,12 +44,20 @@
 // 8kB with NeoPixel or DotStar is a tight fit.
 #define SAMD21_MINIMIZE (defined(SAMD21) && (defined(BOARD_NEOPIXEL_PIN) || defined(BOARD_RGBLED_CLOCK_PIN)))
 
+// Feature flags below are all #ifndef-guarded so a board_config.h can
+// override them (lc-jiggler fork; upstream hard-codes them).
 // Logging to help debugging
+#ifndef USE_LOGS
 #define USE_LOGS 0
+#endif
 // Check various conditions; best leave on
+#ifndef USE_ASSERT
 #define USE_ASSERT 0 // 188 bytes
+#endif
 // Enable reading flash via FAT files; otherwise drive will appear empty
+#ifndef USE_FAT
 #define USE_FAT 1 // 272 bytes
+#endif
 
 // Enable URL in INFO_UF2.TXT. Used for boards that are a very tight fit.
 #ifndef USE_URL_IN_INFO
@@ -63,15 +71,25 @@
 #endif
 
 // Enable USB CDC (Communication Device Class; i.e., USB serial) monitor for Arduino style flashing
+#ifndef USE_CDC
 #define USE_CDC 1 // 1264 bytes (plus terminal, see below)
+#endif
 // Support the UART (real serial port, not USB)
+#ifndef USE_UART
 #define USE_UART 0
+#endif
 // Support Human Interface Device (HID) - serial, flashing and debug
+#ifndef USE_HID
 #define USE_HID 1 // 788 bytes
+#endif
 // Expose HID via WebUSB
+#ifndef USE_WEBUSB
 #define USE_WEBUSB 1
+#endif
 // Doesn't yet disable code, just enumeration
+#ifndef USE_MSC
 #define USE_MSC 1
+#endif
 
 #ifdef BOARD_SCREEN
 #define USE_SCREEN 1
@@ -83,16 +101,40 @@
 // will start the app. This only happens if the app says it wants that (see SINGLE_RESET() below).
 // If disabled here or by the app, the bootloader will only start with double-click of the reset
 // button.
+#ifndef USE_SINGLE_RESET
 #define USE_SINGLE_RESET 1
+#endif
+
+// Arm the double-tap-of-reset entry (write magic, wait 500 ms for a second
+// tap). Boards without a reset button (e.g. lc-jiggler dongles) disable this
+// so power glitches can't strand the device in the bootloader; the app can
+// still request the bootloader by writing DBL_TAP_MAGIC itself.
+#ifndef USE_DBL_TAP
+#define USE_DBL_TAP 1
+#endif
 
 // Fine-tuning of features
+#ifndef USE_HID_SERIAL
 #define USE_HID_SERIAL 0   // just an example, not really needed; 36 bytes
+#endif
+#ifndef USE_HID_EXT
 #define USE_HID_EXT 1      // extended HID commands (read/write mem); 60 bytes
+#endif
+#ifndef USE_HID_HANDOVER
 #define USE_HID_HANDOVER 1 // allow HID application->bootloader seamless transition; 56 bytes
+#endif
+#ifndef USE_MSC_HANDOVER
 #define USE_MSC_HANDOVER 1 // ditto for MSC; 348 bytes
+#endif
+#ifndef USE_MSC_CHECKS
 #define USE_MSC_CHECKS 0   // check validity of MSC commands; 460 bytes
+#endif
+#ifndef USE_CDC_TERMINAL
 #define USE_CDC_TERMINAL 0 // enable ASCII mode on CDC loop (not used by BOSSA); 228 bytes
+#endif
+#ifndef USE_DBG_MSC
 #define USE_DBG_MSC 0      // output debug info about MSC
+#endif
 
 #if USE_CDC
 #define CDC_VERSION "S"
