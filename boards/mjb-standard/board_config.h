@@ -4,10 +4,10 @@
 #define CRYSTALLESS 1
 
 #define VENDOR_NAME "lc"
-#define PRODUCT_NAME "lc-jiggler bootloader"
-#define VOLUME_LABEL "LCJBOOT" /* unused: no MSC */
-#define INDEX_URL "https://github.com/leocov-dev/lc-jiggler"
-#define BOARD_ID "SAMD21E15B-lcj-lite-v1"
+#define PRODUCT_NAME "Mr Jiggly Bones bootloader"
+#define VOLUME_LABEL "MJBBOOT" /* unused: no MSC */
+#define INDEX_URL "https://github.com/leocov-dev/mr-jiggly-bones"
+#define BOARD_ID "SAMD21E16B-mjb-standard-v1"
 
 /* pid.codes test VID; app enumerates as 0x1209:0x0001, bootloader as :0x0002
  * so the Chrome configurator can filter for boot mode. */
@@ -17,8 +17,8 @@
 /* Green channel of the RGB status LED (common-cathode: high = lit). */
 #define LED_PIN PIN_PA05
 
-/* E15: 32 KB flash / 256 B rows (upstream default assumes a 256 KB part). */
-#define FLASH_NUM_ROWS 128
+/* E16: 64 KB flash / 256 B rows (upstream default assumes a 256 KB part). */
+#define FLASH_NUM_ROWS 256
 
 /* Transport policy: HF2 over HID + WebUSB only.
  * - No MSC/UF2 drive ever (product requirement), no FAT.

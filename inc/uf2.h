@@ -45,7 +45,7 @@
 #define SAMD21_MINIMIZE (defined(SAMD21) && (defined(BOARD_NEOPIXEL_PIN) || defined(BOARD_RGBLED_CLOCK_PIN)))
 
 // Feature flags below are all #ifndef-guarded so a board_config.h can
-// override them (lc-jiggler fork; upstream hard-codes them).
+// override them (mr-jiggly-bones fork; upstream hard-codes them).
 // Logging to help debugging
 #ifndef USE_LOGS
 #define USE_LOGS 0
@@ -106,7 +106,7 @@
 #endif
 
 // Arm the double-tap-of-reset entry (write magic, wait 500 ms for a second
-// tap). Boards without a reset button (e.g. lc-jiggler dongles) disable this
+// tap). Boards without a reset button (e.g. mr-jiggly-bones dongles) disable this
 // so power glitches can't strand the device in the bootloader; the app can
 // still request the bootloader by writing DBL_TAP_MAGIC itself.
 #ifndef USE_DBL_TAP

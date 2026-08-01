@@ -1,7 +1,7 @@
-/* Bootloader linker script for the ATSAMD21E16B (lcj-standard).
+/* Bootloader linker script for the ATSAMD21E15B (mjb-lite).
  *
- * Derived from scripts/samd21j18a.ld with MEMORY right-sized: 64 KB flash /
- * 8 KB SRAM (the upstream script assumes a J18A's 256 KB / 32 KB). The
+ * Derived from scripts/samd21j18a.ld with MEMORY right-sized: 32 KB flash /
+ * 4 KB SRAM (the upstream script assumes a J18A's 256 KB / 32 KB). The
  * bootloader still occupies the bottom 8 KB of flash. The last RAM word is
  * the DBL_TAP boot-magic slot; the stack section sits after .bss and never
  * reaches it, but keep RAM LENGTH 4 bytes short as a belt-and-braces measure.
@@ -15,11 +15,11 @@ SEARCH_DIR(.)
 MEMORY
 {
   rom      (rx)  : ORIGIN = 0x00000000, LENGTH = 0x00002000
-  ram      (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00002000 - 4
+  ram      (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00001000 - 4
 }
 
 /* The stack size used by the application. NOTE: you need to adjust according to your application. */
-STACK_SIZE = DEFINED(STACK_SIZE) ? STACK_SIZE : DEFINED(__stack_size__) ? __stack_size__ : 0x1000;
+STACK_SIZE = DEFINED(STACK_SIZE) ? STACK_SIZE : DEFINED(__stack_size__) ? __stack_size__ : 0x600;
 
 /* Section Definitions */
 SECTIONS

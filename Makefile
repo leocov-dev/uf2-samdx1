@@ -112,7 +112,7 @@ all: submodules dirs $(EXECUTABLE) $(SELF_EXECUTABLE)
 submodules: $(SUBMODULES)
 
 # Bootloader binary only — skips the self-update UF2 (and thus the lib/uf2
-# submodule + python tooling), which lc-jiggler doesn't use (no MSC).
+# submodule + python tooling), which mr-jiggly-bones doesn't use (no MSC).
 bin: dirs $(EXECUTABLE)
 
 r: run
