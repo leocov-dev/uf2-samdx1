@@ -297,6 +297,15 @@ int main(void) {
     check_start_application();
 
     /* We have determined we should stay in the monitor. */
+
+    /* Confirmed resident (not bouncing back to the app) — retarget the
+     * breathing cue from green to red so the user holding button A knows
+     * it's safe to release now. */
+#if defined(LED_R_PIN)
+    LED_MSC_OFF();
+    led_boot_locked = true;
+#endif
+
     /* System initialization */
     system_init();
 

@@ -137,28 +137,57 @@ static uint32_t now;
 static uint32_t signal_end;
 int8_t led_tick_step = 1;
 volatile bool led_tick_on = false;
+volatile bool led_boot_locked = false;
 static uint8_t limit = 200;
+
+/* The confirmed-resident cue (main.c, led_boot_locked) retargets this same
+ * breathing sweep at red instead of green, rather than duplicating it. */
+static void led_pwm_on(void) {
+#if defined(LED_R_PIN)
+    if (led_boot_locked) {
+        PINOP(LED_R_PIN, OUTSET);
+        return;
+    }
+#endif
+    LED_MSC_ON();
+}
+
+static void led_pwm_off(void) {
+#if defined(LED_R_PIN)
+    if (led_boot_locked) {
+        PINOP(LED_R_PIN, OUTCLR);
+        return;
+    }
+#endif
+    LED_MSC_OFF();
+}
 
 void led_tick() {
     led_tick_on = true;
     now++;
     if (signal_end) {
         if (now == signal_end - 1000) {
-            LED_MSC_ON();
+            led_pwm_on();
         }
         if (now == signal_end) {
             signal_end = 0;
         }
     } else {
         uint8_t curr = now & 0xff;
+        /* Keep the vendor's original sweep timing (limit 10..250 => breath
+         * pacing); only scale the visible on-time down to the brightness
+         * cap, so dimming doesn't also speed up the breathing cycle. */
+        uint8_t on_ticks = (uint8_t)((unsigned)limit * LED_BRIGHTNESS_PCT / 100u);
+        if (on_ticks < 1)
+            on_ticks = 1;
         if (curr == 0) {
-            LED_MSC_ON();
+            led_pwm_on();
             if (limit < 10 || limit > 250) {
                 led_tick_step = -led_tick_step;
             }
             limit += led_tick_step;
-        } else if (curr == limit) {
-            LED_MSC_OFF();
+        } else if (curr == on_ticks) {
+            led_pwm_off();
         }
     }
 }
@@ -173,6 +202,12 @@ void led_signal() {
 void led_init() {
 #if defined(LED_PIN)
     PINOP(LED_PIN, DIRSET);
+#endif
+#if defined(LED_R_PIN)
+    PINOP(LED_R_PIN, DIRSET);
+#endif
+#if defined(LED_B_PIN)
+    PINOP(LED_B_PIN, DIRSET);
 #endif
     LED_MSC_ON();
 
