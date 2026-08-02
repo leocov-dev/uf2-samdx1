@@ -55,7 +55,10 @@ LDFLAGS= $(COMMON_FLAGS) \
 -Wl,--warn-section-align \
 -save-temps -nostartfiles \
 --specs=nano.specs --specs=nosys.specs
-BUILD_PATH=build/$(BOARD)
+# Overridable (Makefile.user / environment / command line) so the tree can be
+# checked out on a slow filesystem (e.g. iCloud Drive) with objects on local disk.
+BUILD_ROOT ?= build
+BUILD_PATH ?= $(BUILD_ROOT)/$(BOARD)
 INCLUDES = -I. -I./inc -I./inc/preprocessor
 INCLUDES += -I./boards/$(BOARD) -Ilib/cmsis/CMSIS/Include -Ilib/usb_msc
 INCLUDES += -I$(BUILD_PATH)
@@ -133,8 +136,8 @@ GDB = arm-none-eabi-gdb
 
 bmp-flash: $(BUILD_PATH)/$(NAME).bin
 	@test "X$(BMP)" != "X"
-	$(GDB) $(BMP_ARGS) -ex "load" -ex "quit" $(BUILD_PATH)/$(NAME).elf | tee build/flash.log
-	@grep -q "Transfer rate" build/flash.log
+	$(GDB) $(BMP_ARGS) -ex "load" -ex "quit" $(BUILD_PATH)/$(NAME).elf | tee $(BUILD_PATH)/flash.log
+	@grep -q "Transfer rate" $(BUILD_PATH)/flash.log
 
 bmp-flashone:
 	while : ; do $(MAKE) bmp-flash && exit 0 ; sleep 1 ; done
@@ -202,7 +205,12 @@ $(BUILD_PATH)/selfdata.c: $(EXECUTABLE) scripts/gendata.py src/sketch.cpp
 	$(Q)python3 scripts/gendata.py $(BOOTLOADER_SIZE) $(EXECUTABLE)
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD_ROOT)
+
+# Let callers (firmware/Makefile) read a variable instead of guessing it —
+# BUILD_PATH in particular, which Makefile.user is free to relocate.
+print-%:
+	@echo $($*)
 
 gdb:
 	arm-none-eabi-gdb $(BUILD_PATH)/$(NAME).elf
@@ -220,22 +228,22 @@ applet1: $(BUILD_PATH)/utils.asmdump
 	node scripts/genapplet.js $< resetIntoApp
 
 drop-board: all
-	@mkdir -p build/drop
-	@rm -rf build/drop/$(BOARD)
-	@mkdir -p build/drop/$(BOARD)
-	@cp $(SELF_EXECUTABLE) build/drop/$(BOARD)/
-	@cp $(EXECUTABLE) build/drop/$(BOARD)/
+	@mkdir -p $(BUILD_ROOT)/drop
+	@rm -rf $(BUILD_ROOT)/drop/$(BOARD)
+	@mkdir -p $(BUILD_ROOT)/drop/$(BOARD)
+	@cp $(SELF_EXECUTABLE) $(BUILD_ROOT)/drop/$(BOARD)/
+	@cp $(EXECUTABLE) $(BUILD_ROOT)/drop/$(BOARD)/
 # .ino works only for SAMD21 right now; suppress for SAMD51
 ifeq ($(CHIP_FAMILY),samd21)
-	@cp $(SELF_EXECUTABLE_INO) build/drop/$(BOARD)/
-	@cp boards/$(BOARD)/board_config.h build/drop/$(BOARD)/
+	@cp $(SELF_EXECUTABLE_INO) $(BUILD_ROOT)/drop/$(BOARD)/
+	@cp boards/$(BOARD)/board_config.h $(BUILD_ROOT)/drop/$(BOARD)/
 endif
 
 drop-pkg:
-	mv build/drop build/uf2-samdx1-$(UF2_VERSION_BASE)
-	cp bin-README.md build/uf2-samdx1-$(UF2_VERSION_BASE)/README.md
-	cd build; 7z a uf2-samdx1-$(UF2_VERSION_BASE).zip uf2-samdx1-$(UF2_VERSION_BASE)
-	rm -rf build/uf2-samdx1-$(UF2_VERSION_BASE)
+	mv $(BUILD_ROOT)/drop $(BUILD_ROOT)/uf2-samdx1-$(UF2_VERSION_BASE)
+	cp bin-README.md $(BUILD_ROOT)/uf2-samdx1-$(UF2_VERSION_BASE)/README.md
+	cd $(BUILD_ROOT); 7z a uf2-samdx1-$(UF2_VERSION_BASE).zip uf2-samdx1-$(UF2_VERSION_BASE)
+	rm -rf $(BUILD_ROOT)/uf2-samdx1-$(UF2_VERSION_BASE)
 
 all-boards:
 	@for f in `cd boards; ls` ; do "$(MAKE)" --no-print-directory BOARD=$$f drop-board || break 1; done
