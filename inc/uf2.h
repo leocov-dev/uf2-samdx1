@@ -113,6 +113,13 @@
 #define USE_DBL_TAP 1
 #endif
 
+// Scale the on-time of every LED soft-PWM cycle (led_tick()) to this percent
+// of full brightness. Boards that don't set it get full brightness
+// (unchanged upstream behavior).
+#ifndef LED_BRIGHTNESS_PCT
+#define LED_BRIGHTNESS_PCT 100
+#endif
+
 // Fine-tuning of features
 #ifndef USE_HID_SERIAL
 #define USE_HID_SERIAL 0   // just an example, not really needed; 36 bytes
@@ -224,6 +231,41 @@ From CPU config:
 #define FLASH_NUM_ROWS 1024
 #endif
 
+// --- RWW EEPROM ------------------------------------------------------------
+// The SAMD21 "B" die carries a read-while-write EEPROM section in its own
+// address aperture, separate from the main array. We build against the
+// samd21a CMSIS pack (lib/samd21/samd21a), which predates it and defines none
+// of these; the samd21b pack's Nvmctrl register struct is byte-identical, so
+// the constants are hand-ported here. Values from
+// samd21b/include/{component,instance}/nvmctrl.h.
+//
+// The section mirrors the main array's geometry: 64 B page, 256 B row. Erase
+// by row (RWWEEER), write by page (RWWEEWP); PBC (page buffer clear) is
+// shared with the main array and needs no RWWEE-specific opcode.
+//
+// Deliberately NOT ported: NVMCTRL_RWWEE_PAGES. The vendor header comments it
+// "// Page size" but it is a page *count*, and it lives in the shared
+// instance header, so its 32 is wrong for the 1 KB (16-page) E15.
+#ifndef NVMCTRL_CTRLA_CMD_RWWEEER
+#define NVMCTRL_CTRLA_CMD_RWWEEER_Val 0x1A
+#define NVMCTRL_CTRLA_CMD_RWWEEER (NVMCTRL_CTRLA_CMD_RWWEEER_Val << NVMCTRL_CTRLA_CMD_Pos)
+#endif
+#ifndef NVMCTRL_CTRLA_CMD_RWWEEWP
+#define NVMCTRL_CTRLA_CMD_RWWEEWP_Val 0x1C
+#define NVMCTRL_CTRLA_CMD_RWWEEWP (NVMCTRL_CTRLA_CMD_RWWEEWP_Val << NVMCTRL_CTRLA_CMD_Pos)
+#endif
+#ifndef NVMCTRL_RWW_EEPROM_ADDR
+#define NVMCTRL_RWW_EEPROM_ADDR 0x00400000
+#endif
+// Per-part, so each board_config.h sets it: 0x800 on the E16, 0x400 on the
+// E15 (samd21e16bu.h / samd21e15bu.h, NVMCTRL_RWW_EEPROM_SIZE). Zero means
+// "this board doesn't use RWWEE" and compiles the write path out — that's
+// every upstream board, whose behavior is then unchanged.
+#ifndef NVMCTRL_RWW_EEPROM_SIZE
+#define NVMCTRL_RWW_EEPROM_SIZE 0
+#endif
+#define USE_RWWEE (NVMCTRL_RWW_EEPROM_SIZE > 0)
+
 #define NOOP                                                                                       \
     do {                                                                                           \
     } while (0)
@@ -269,6 +311,12 @@ void flash_write_row(uint32_t *dst, uint32_t *src);
 void flash_erase_to_end(uint32_t *start_address);
 void flash_write_words(uint32_t *dst, uint32_t *src, uint32_t n_words);
 void copy_words(uint32_t *dst, uint32_t *src, uint32_t n_words);
+#if USE_RWWEE
+// dst must be a row-aligned address inside the RWWEE aperture. Reading the
+// section back needs no special path — it's plain memory to the CPU, so
+// copy_words() (and thus HF2_CMD_READ_WORDS) already works on it.
+void flash_write_rwwee_row(uint32_t *dst, uint32_t *src);
+#endif
 
 int writeNum(char *buf, uint32_t n, bool full);
 
@@ -317,6 +365,7 @@ void resetIntoApp(void);
 void resetIntoBootloader(void);
 extern uint32_t current_cpu_frequency_MHz;
 extern volatile bool led_tick_on;
+extern volatile bool led_boot_locked;
 void system_init(void);
 
 #define LED_TICK led_tick

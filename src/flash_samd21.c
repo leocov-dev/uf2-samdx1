@@ -113,3 +113,54 @@ void flash_write_row(uint32_t *dst, uint32_t *src) {
     flash_erase_row(dst);
     flash_write_words(dst, src, FLASH_ROW_SIZE / 4);
 }
+
+#if USE_RWWEE
+
+// Same geometry as the main array (64 B page, 256 B row), just different
+// erase/write opcodes — so these mirror flash_erase_row/flash_write_words
+// with RWWEEER/RWWEEWP substituted. PBC is shared between the two sections.
+
+static void flash_erase_rwwee_row(uint32_t *dst) {
+    wait_ready();
+    NVMCTRL->STATUS.reg = NVMCTRL_STATUS_MASK;
+
+    NVMCTRL->ADDR.reg = (uint32_t)dst / 2;
+    NVMCTRL->CTRLA.reg = NVMCTRL_CTRLA_CMDEX_KEY | NVMCTRL_CTRLA_CMD_RWWEEER;
+    wait_ready();
+}
+
+void flash_write_rwwee_row(uint32_t *dst, uint32_t *src) {
+    flash_erase_rwwee_row(dst);
+
+    // MANUAL page write — the one place this must differ from
+    // flash_write_words(), which uses automatic (MANW=0). Automatic write
+    // fires as soon as the last word of the page buffer is written, and it
+    // issues a *main array* write page, not RWWEEWP. Against an RWWEE address
+    // that write does nothing useful, but it still empties the page buffer,
+    // so the explicit RWWEEWP below would then commit a blank (all-0xFF)
+    // page — the section reads back erased and the write looks silently
+    // lost. Manual mode makes RWWEEWP the only thing that commits.
+    NVMCTRL->CTRLB.bit.MANW = 1;
+
+    uint32_t n_words = FLASH_ROW_SIZE / 4;
+    while (n_words > 0) {
+        uint32_t len = (FLASH_PAGE_SIZE >> 2) < n_words ? (FLASH_PAGE_SIZE >> 2) : n_words;
+        n_words -= len;
+
+        // Execute "PBC" Page Buffer Clear
+        NVMCTRL->CTRLA.reg = NVMCTRL_CTRLA_CMDEX_KEY | NVMCTRL_CTRLA_CMD_PBC;
+        wait_ready();
+
+        // make sure there are no other memory writes here
+        // otherwise we get lock-ups
+
+        while (len--)
+            *dst++ = *src++;
+
+        // Execute "RWWEEWP" RWW EEPROM Write Page
+        NVMCTRL->CTRLA.reg = NVMCTRL_CTRLA_CMDEX_KEY | NVMCTRL_CTRLA_CMD_RWWEEWP;
+        wait_ready();
+    }
+}
+
+#endif

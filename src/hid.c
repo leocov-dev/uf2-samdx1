@@ -156,7 +156,21 @@ void process_core(HID_InBuffer *pkt) {
         checkDataSize(write_flash_page, FLASH_ROW_SIZE);
         // first send ACK and then start writing, while getting the next packet
         send_hf2_response(pkt, 0);
-        if (cmd->write_flash_page.target_addr >= APP_START_ADDRESS) {
+        // Same wire format for both destinations — the address picks the
+        // section, so no new HF2 command id and the protocol stays
+        // upstream-compatible. Anything outside both ranges is dropped.
+#if USE_RWWEE
+        // The RWWEE aperture sits far above the main array, so it has to be
+        // tested first — the app-range check below is a bare lower bound and
+        // would otherwise swallow it.
+        if (cmd->write_flash_page.target_addr >= NVMCTRL_RWW_EEPROM_ADDR &&
+            cmd->write_flash_page.target_addr <=
+                NVMCTRL_RWW_EEPROM_ADDR + NVMCTRL_RWW_EEPROM_SIZE - FLASH_ROW_SIZE) {
+            flash_write_rwwee_row((void *)cmd->write_flash_page.target_addr,
+                                  cmd->write_flash_page.data);
+        } else
+#endif
+            if (cmd->write_flash_page.target_addr >= APP_START_ADDRESS) {
             flash_write_row((void *)cmd->write_flash_page.target_addr, cmd->write_flash_page.data);
         }
         return;
