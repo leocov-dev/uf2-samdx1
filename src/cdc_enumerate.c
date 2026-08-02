@@ -73,9 +73,16 @@ const char devDescriptor[] = {
     0x01            // bNumConfigs
 };
 
-#define CFG_DESC_SIZE (32 + USE_CDC * (58 + 8) + USE_HID * 32 + USE_WEBUSB * 23)
-#define HID_IF_NUM (USE_CDC ? 3 : 1)
-#define WEB_IF_NUM (HID_IF_NUM + 1)
+// 9 = configuration descriptor header; each block below is only counted when
+// its transport is actually built. Upstream hardcoded the MSC block's 23 bytes
+// into the leading constant (32 = 9 + 23), so a USE_MSC=0 build still
+// advertised a phantom mass-storage interface — see the MSC descriptor below.
+#define CFG_DESC_SIZE                                                                              \
+    (9 + USE_MSC * 23 + USE_CDC * (58 + 8) + USE_HID * 32 + USE_WEBUSB * 23)
+// Interfaces are numbered in descriptor order: CDC (2) then MSC (1) then HID
+// then WebUSB, each present only if built.
+#define HID_IF_NUM (2 * USE_CDC + USE_MSC)
+#define WEB_IF_NUM (HID_IF_NUM + USE_HID)
 
 #if USE_HID
 // can be requested separately from the entire config desc
@@ -124,7 +131,7 @@ char cfgDescriptor[] = {
     0x02,          // CbDescriptorType
     CFG_DESC_SIZE, // CwTotalLength 2 EP + Control
     0x00,
-    1 + 2 * USE_CDC + USE_HID + USE_WEBUSB, // CbNumInterfaces
+    USE_MSC + 2 * USE_CDC + USE_HID + USE_WEBUSB, // CbNumInterfaces
     0x01,                                   // CbConfigurationValue
     0x00,                                   // CiConfiguration
     0x80,                                   // CbmAttributes 0x80 - bus-powered
@@ -220,16 +227,24 @@ char cfgDescriptor[] = {
 #endif
 
     // MSC
+    //
+    // Declared only when the MSC transport is actually built. Upstream emits
+    // this interface unconditionally and merely zeroes its class code when
+    // USE_MSC is 0 — which leaves interface 0 advertising bInterfaceClass 0
+    // (reserved at interface level) with two bulk endpoints that no compiled
+    // code ever services. macOS responds to that unclassifiable interface by
+    // popping up an "open with" application picker on every attach.
+#if USE_MSC
 
-    9,               /// descriptor size in bytes
-    4,               /// descriptor type - interface
-    USE_CDC ? 2 : 0, /// interface number
-    0,               /// alternate setting number
-    2,               /// number of endpoints
-    USE_MSC * 8,     /// class code - mass storage
-    6,               /// subclass code - SCSI transparent command set
-    80,              /// protocol code - bulk only transport
-    0,               /// interface string index
+    9,           /// descriptor size in bytes
+    4,           /// descriptor type - interface
+    2 * USE_CDC, /// interface number
+    0,           /// alternate setting number
+    2,           /// number of endpoints
+    8,           /// class code - mass storage
+    6,           /// subclass code - SCSI transparent command set
+    80,          /// protocol code - bulk only transport
+    0,           /// interface string index
 
     7,                    /// descriptor size in bytes
     5,                    /// descriptor type - endpoint
@@ -246,6 +261,7 @@ char cfgDescriptor[] = {
     PKT_SIZE,       /// maximum packet size
     0,
     0, /// maximum NAK rate
+#endif
 
 #if USE_HID
     // HID
@@ -678,14 +694,18 @@ uint32_t USB_Write(const void *pData, uint32_t length, uint8_t ep_num) {
     return USB_WriteCore(pData, length, ep_num, false);
 }
 
+// Set by AT91F_CDC_Enumerate() from the current SETUP packet; read by
+// sendCtrl() and by USB_WriteCore()'s AUTO_ZLP decision below.
+static uint16_t wLength;
+
 uint32_t USB_WriteCore(const void *pData, uint32_t length, uint8_t ep_num, bool handoverMode) {
     uint32_t data_address;
+    bool auto_zlp = false;
 
     UsbDeviceDescriptor *epdesc = (UsbDeviceDescriptor *)USB->HOST.DESCADD.reg + ep_num;
 
     if (handoverMode) {
         data_address = (uint32_t)pData;
-        epdesc->DeviceDescBank[1].PCKSIZE.bit.AUTO_ZLP = false;
     }
     /* Check for requirement for multi-packet or auto zlp */
     else if (length >= (1 << (epdesc->DeviceDescBank[1].PCKSIZE.bit.SIZE + 3))) {
@@ -695,13 +715,33 @@ uint32_t USB_WriteCore(const void *pData, uint32_t length, uint8_t ep_num, bool 
         assert(data_address >= HMCRAMC0_ADDR);
 
         // always disable AUTO_ZLP on MSC channel, otherwise enable
-        epdesc->DeviceDescBank[1].PCKSIZE.bit.AUTO_ZLP = ep_num == USB_EP_MSC_IN ? false : true;
+        auto_zlp = ep_num != USB_EP_MSC_IN;
+
+        // ...but on the control endpoint a ZLP only terminates the data stage
+        // when we are returning *fewer* bytes than the host asked for. A reply
+        // of exactly wLength already ends it, so the host never issues another
+        // IN token: the queued ZLP is never collected, TRCPT1 never arrives,
+        // TRFAIL1 sets instead, and the wait loop below spins forever — the
+        // device keeps its address but is deaf to every later SETUP, so it
+        // enumerates and then fails to configure.
+        //
+        // Upstream never sees this because no upstream board's config
+        // descriptor is an exact multiple of 64 (153 B with CDC+MSC). Ours
+        // became exactly 64 B the moment the phantom MSC interface came out.
+        if (ep_num == 0 && length >= wLength)
+            auto_zlp = false;
     } else {
         /* Copy to local buffer */
         memcpy(endpointCache[ep_num].buf, pData, length);
         /* Update the EP data address */
         data_address = (uint32_t)&endpointCache[ep_num].buf;
     }
+
+    // Always written, never left over: upstream only assigns AUTO_ZLP on two
+    // of the three paths, so a short write (including the status-stage ZLP
+    // from AT91F_USB_SendZlp()) used to inherit whatever the previous transfer
+    // on this endpoint set.
+    epdesc->DeviceDescBank[1].PCKSIZE.bit.AUTO_ZLP = auto_zlp;
 
     /* Set the buffer address for ep data */
     epdesc->DeviceDescBank[1].ADDR.reg = data_address;
@@ -711,14 +751,46 @@ uint32_t USB_WriteCore(const void *pData, uint32_t length, uint8_t ep_num, bool 
      * > ep size */
     epdesc->DeviceDescBank[1].PCKSIZE.bit.MULTI_PACKET_SIZE = 0;
     /* Clear the transfer complete flag  */
-    USB->DEVICE.DeviceEndpoint[ep_num].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRCPT1;
+    // TRFAIL1 is cleared alongside TRCPT1 so the wait below can only ever see a
+    // failure belonging to *this* transfer. Interrupt IN endpoints are polled
+    // every 1 ms and every poll that finds the bank empty sets TRFAIL1
+    // (errorflow), so a stale flag is the normal resting state, not an error.
+    USB->DEVICE.DeviceEndpoint[ep_num].EPINTFLAG.reg =
+        USB_DEVICE_EPINTFLAG_TRCPT1 | USB_DEVICE_EPINTFLAG_TRFAIL1;
     /* Set the bank as ready */
     USB->DEVICE.DeviceEndpoint[ep_num].EPSTATUSSET.reg = USB_DEVICE_EPSTATUSSET_BK1RDY;
 
     /* Wait for transfer to complete */
-    while (!(USB->DEVICE.DeviceEndpoint[ep_num].EPINTFLAG.reg & USB_DEVICE_EPINTFLAG_TRCPT1)) {
-        // if (ep_num && !USB_Ok())
-        //    return -1;
+    // Upstream waits on TRCPT1 alone, which is an unbounded spin: a control IN
+    // that ends without completing hangs the main loop forever, and since the
+    // USB peripheral keeps its address the device stays enumerated but stops
+    // answering control transfers — indistinguishable from a crash, and not
+    // recoverable by a reset (only a power cycle).
+    //
+    // The escapes are control-endpoint only, deliberately. Returning early
+    // leaves the DMA still reading the caller's buffer: send_hf2() points the
+    // controller straight at a stack buffer (handoverMode) and reuses it for
+    // the next packet, so bailing out on a data endpoint corrupts multi-packet
+    // responses. EP0 has no such caller, and only EP0 ever hangs here.
+    for (;;) {
+        uint8_t flags = USB->DEVICE.DeviceEndpoint[ep_num].EPINTFLAG.reg;
+
+        if (flags & USB_DEVICE_EPINTFLAG_TRCPT1)
+            break;
+
+        if (ep_num == 0) {
+            // The IN failed — e.g. the host stopped collecting once it had the
+            // wLength bytes it asked for.
+            if (flags & USB_DEVICE_EPINTFLAG_TRFAIL1) {
+                USB->DEVICE.DeviceEndpoint[ep_num].EPINTFLAG.reg = USB_DEVICE_EPINTFLAG_TRFAIL1;
+                break;
+            }
+            // A new SETUP aborts whatever control transfer was in flight; the
+            // host has moved on and will never drain this bank. Leave RXSTP set
+            // so AT91F_CDC_Enumerate() still services the new request.
+            if (flags & USB_DEVICE_EPINTFLAG_RXSTP)
+                break;
+        }
     }
 
     return length;
@@ -733,6 +805,8 @@ void AT91F_USB_SendZlp(void) {
     USB_Write(&c, 0, 0);
 }
 
+// Bulk in/out pair — only the CDC and MSC interfaces use one.
+#if USE_CDC || USE_MSC
 static void configureInOut(uint8_t in_ep) {
     /* Configure BULK OUT endpoint for CDC Data interface*/
     USB->DEVICE.DeviceEndpoint[in_ep + 1].EPCFG.reg = USB_DEVICE_EPCFG_EPTYPE0(3);
@@ -751,6 +825,7 @@ static void configureInOut(uint8_t in_ep) {
     /* Configure the data buffer */
     usb_endpoint_table[in_ep].DeviceDescBank[1].ADDR.reg = (uint32_t)&endpointCache[in_ep].buf;
 }
+#endif
 
 #if USE_HID || USE_WEBUSB
 __attribute__((noinline))
@@ -763,8 +838,6 @@ static void configureInterruptInOut(uint8_t ep) {
     usb_endpoint_table[ep].DeviceDescBank[1].PCKSIZE.bit.SIZE = 3;
 }
 #endif
-
-static uint16_t wLength;
 
 static void sendCtrl(const void *data, uint32_t len) { USB_Write(data, MIN(len, wLength), 0); }
 
@@ -882,7 +955,9 @@ void AT91F_CDC_Enumerate() {
         USB->DEVICE.DeviceEndpoint[USB_EP_COMM].EPSTATUSCLR.reg = USB_DEVICE_EPSTATUSCLR_BK1RDY;
 #endif
 
+#if USE_MSC
         configureInOut(USB_EP_MSC_IN);
+#endif
 
 #if USE_HID
         configureInterruptInOut(USB_EP_HID);
